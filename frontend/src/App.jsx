@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import "./index.css";
 
-const API = "/api";
+const API = "https://journal-api-n2qo.onrender.com";
 
 const habits = [
   ["gym", "🏋️", "Gym"],
