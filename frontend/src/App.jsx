@@ -191,7 +191,7 @@ ${completed || "None completed"}
 ${wellness || "Not recorded"}`;
 
     try {
-      await api("/journal", {
+      await api("/api/journal", {
         method: "POST",
         body: JSON.stringify({
           entry_date: todayISO(),
@@ -575,7 +575,7 @@ function Journal({ data, setData, notify }) {
     setData((d) => ({ ...d, journal: entry }));
 
     try {
-      await api("/journal", {
+      await api("/api/journal", {
         method: "POST",
         body: JSON.stringify({
           entry_date: todayISO(),
