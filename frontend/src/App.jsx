@@ -15,7 +15,7 @@ const habits = [
   ["agency", "💼", "Agency"],
   ["manifestation", "✨", "Manifesting"],
   ["assignments", "📚", "Assignments"],
-  ["youth", "🌍", "Youth Exchange"],
+  ["applications", "🌍", "Applications"],
 ];
 
 const moods = [
@@ -35,7 +35,13 @@ const wellness = [
 ];
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 }
 
 function monthISO() {
@@ -94,10 +100,43 @@ function ProgressRing({ value, total }) {
 }
 
 function Today({ data, setData, notify }) {
+  const [now, setNow] = useState(new Date());
+  const [journalEntry, setJournalEntry] = useState(data.journal || "");
+
   const completed = Object.values(data.habits).filter(Boolean).length;
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(new Date());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  async function saveJournal() {
+    setData((d) => ({
+      ...d,
+      journal: journalEntry,
+    }));
+
+    try {
+      await api("/api/journal", {
+        method: "POST",
+        body: JSON.stringify({
+          entry_date: todayISO(),
+          content: journalEntry,
+        }),
+      });
+
+      notify("Journal saved 📝");
+    } catch {
+      notify("Journal saved locally");
+    }
+  }
 
   async function saveMood(mood) {
     setData((d) => ({ ...d, mood }));
+
     try {
       await api("/mood", {
         method: "POST",
@@ -106,28 +145,10 @@ function Today({ data, setData, notify }) {
           mood,
         }),
       });
+
       notify("Mood saved ✨");
     } catch {
-      notify("Saved locally — API needs its exact field format");
-    }
-  }
-
-  async function saveWellness(name, value) {
-    const next = { ...data.wellness, [name]: value };
-    setData((d) => ({ ...d, wellness: next }));
-
-    try {
-      await api("/wellness", {
-        method: "POST",
-        body: JSON.stringify({
-          entry_date: todayISO(),
-          category: name,
-          rating: value,
-        }),
-      });
-      notify("Wellness saved");
-    } catch {
-      notify("Saved locally");
+      notify("Mood saved locally");
     }
   }
 
@@ -142,17 +163,22 @@ function Today({ data, setData, notify }) {
           hours: value,
         }),
       });
+
       notify("Sleep saved 🌙");
     } catch {
-      notify("Saved locally");
+      notify("Sleep saved locally");
     }
   }
 
   async function toggleHabit(id) {
     const next = !data.habits[id];
+
     setData((d) => ({
       ...d,
-      habits: { ...d.habits, [id]: next },
+      habits: {
+        ...d.habits,
+        [id]: next,
+      },
     }));
 
     try {
@@ -169,61 +195,76 @@ function Today({ data, setData, notify }) {
     }
   }
 
-  async function submitToday() {
-    const completed = habits
-      .filter(([id]) => data.habits?.[id])
-      .map(([, , name]) => `✓ ${name}`)
-      .join("\n");
+  const dateText = now.toLocaleDateString("en-IN", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 
-    const wellness = Object.entries(data.wellness || {})
-      .map(([name, rating]) => `${name}: ${rating}/5`)
-      .join("\n");
-
-    const summary = `📅 TODAY — ${todayISO()}
-
-🙂 Mood: ${data.mood || "Not recorded"}
-😴 Sleep: ${data.sleep || "Not recorded"} hours
-
-🏋️ HABITS
-${completed || "None completed"}
-
-🧠 WELLNESS
-${wellness || "Not recorded"}`;
-
-    try {
-      await api("/api/journal", {
-        method: "POST",
-        body: JSON.stringify({
-          entry_date: todayISO(),
-          content: summary
-        })
-      });
-      notify("🔥 Today's check-in sent to Telegram!");
-    } catch (e) {
-      notify("Failed to send today's check-in");
-    }
-  }
+  const timeText = now.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
 
   return (
     <main>
+      {/* DATE + LIVE TIME */}
       <header className="hero">
         <div>
+          <div className="eyebrow">TODAY</div>
+
+          <h1>Good day 👋</h1>
+
           <div className="date-label">
-            {new Date().toLocaleDateString("en-IN", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-            })}
+            {dateText}
           </div>
-          <h1>Good evening 👋</h1>
-          <p>Let's check in with yourself.</p>
+
+          <div
+            style={{
+              marginTop: "8px",
+              fontSize: "15px",
+              fontWeight: "600",
+              opacity: 0.7,
+              letterSpacing: "0.5px",
+            }}
+          >
+            {timeText}
+          </div>
         </div>
 
         <div className="avatar">S</div>
       </header>
 
+      {/* JOURNAL */}
+      <Card className="journal-card">
+        <SectionTitle
+          eyebrow="JOURNAL"
+          title="What's on your mind?"
+        />
+
+        <textarea
+          value={journalEntry}
+          onChange={(e) => setJournalEntry(e.target.value)}
+          placeholder="Write whatever is on your mind today..."
+        />
+
+        <button
+          className="primary-button"
+          onClick={saveJournal}
+        >
+          Save Journal Entry
+        </button>
+      </Card>
+
+      {/* MOOD */}
       <Card className="mood-card">
-        <SectionTitle eyebrow="DAILY CHECK-IN" title="How are you feeling?" />
+        <SectionTitle
+          eyebrow="MOOD"
+          title="How are you feeling?"
+        />
 
         <div className="mood-row">
           {moods.map(([emoji, label]) => (
@@ -241,115 +282,62 @@ ${wellness || "Not recorded"}`;
         </div>
       </Card>
 
-      <div className="grid-two">
-        <Card>
-          <div className="mini-heading">
-            <span>😴</span>
-            <div>
-              <div className="eyebrow">SLEEP</div>
-              <strong>{data.sleep.toFixed(1)}h</strong>
-            </div>
-          </div>
-
-          <input
-            className="range"
-            type="range"
-            min="0"
-            max="12"
-            step="0.5"
-            value={data.sleep}
-            onChange={(e) => saveSleep(Number(e.target.value))}
-          />
-
-          <div className="range-labels">
-            <span>0h</span>
-            <span>6h</span>
-            <span>12h</span>
-          </div>
-        </Card>
-
-        <Card>
-          <div className="habit-summary">
-            <ProgressRing value={completed} total={habits.length} />
-            <div>
-              <div className="eyebrow">HABITS</div>
-              <strong>{completed} completed</strong>
-              <p>Keep the streak alive.</p>
-            </div>
-          </div>
-        </Card>
-      </div>
-
+      {/* SLEEP */}
       <Card>
-        <SectionTitle eyebrow="TODAY" title="Your habits" />
+        <div className="mini-heading">
+          <span>😴</span>
+
+          <div>
+            <div className="eyebrow">SLEEP</div>
+            <strong>{data.sleep.toFixed(1)}h</strong>
+          </div>
+        </div>
+
+        <input
+          className="range"
+          type="range"
+          min="0"
+          max="12"
+          step="0.5"
+          value={data.sleep}
+          onChange={(e) =>
+            saveSleep(Number(e.target.value))
+          }
+        />
+
+        <div className="range-labels">
+          <span>0h</span>
+          <span>6h</span>
+          <span>12h</span>
+        </div>
+      </Card>
+
+      {/* HABITS */}
+      <Card>
+        <SectionTitle
+          eyebrow="HABITS"
+          title={`${completed} of ${habits.length} completed`}
+        />
 
         <div className="habit-grid">
           {habits.map(([id, emoji, name]) => (
             <button
               key={id}
-              className={`habit-pill ${data.habits[id] ? "done" : ""}`}
+              className={`habit-pill ${
+                data.habits[id] ? "done" : ""
+              }`}
               onClick={() => toggleHabit(id)}
             >
               <span>{emoji}</span>
               <span>{name}</span>
-              <b>{data.habits[id] ? "✓" : "+"}</b>
+              <b>
+                {data.habits[id] ? "✓" : "+"}
+              </b>
             </button>
           ))}
         </div>
       </Card>
-
-      <Card>
-        <SectionTitle eyebrow="WELLNESS" title="Rate your day" />
-
-        <div className="wellness-list">
-          {wellness.map(([emoji, name]) => (
-            <div className="wellness-item" key={name}>
-              <div className="wellness-name">
-                <span>{emoji}</span>
-                {name}
-              </div>
-
-              <div className="rating-row">
-                {[1, 2, 3, 4, 5].map((rating) => (
-                  <button
-                    key={rating}
-                    className={
-                      data.wellness[name] >= rating ? "rating active" : "rating"
-                    }
-                    onClick={() => saveWellness(name, rating)}
-                  >
-                    {rating}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      <Card className="priority-card">
-        <div className="priority-icon">🎯</div>
-        <div>
-          <div className="eyebrow">THIS WEEK</div>
-          <h3>{data.priority || "Set your top priority"}</h3>
-          <p>Small progress every day adds up.</p>
-        </div>
-      </Card>
-
-      <Card className="ai-card">
-        <div className="ai-icon">✦</div>
-        <div>
-          <div className="eyebrow">AI INSIGHT</div>
-          <h3>{data.insight}</h3>
-          <p>Your personal data is being turned into useful patterns.</p>
-        </div>
-      </Card>
-    
-        <button className="primary-button" onClick={submitToday}>
-          📲 Submit Today's Check-in
-        </button>
-
-</main>
+    </main>
   );
 }
 
