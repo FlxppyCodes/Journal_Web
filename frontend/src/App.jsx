@@ -15,7 +15,7 @@ const habits = [
   ["agency", "💼", "Agency"],
   ["manifestation", "✨", "Manifesting"],
   ["assignments", "📚", "Assignments"],
-  ["applications", "🌍", "Applications"],
+  ["opportunities", "🌍", "Opportunities"],
 ];
 
 const moods = [
@@ -35,13 +35,7 @@ const wellness = [
 ];
 
 function todayISO() {
-  const d = new Date();
-
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
+  return new Date().toISOString().slice(0, 10);
 }
 
 function monthISO() {
@@ -100,43 +94,10 @@ function ProgressRing({ value, total }) {
 }
 
 function Today({ data, setData, notify }) {
-  const [now, setNow] = useState(new Date());
-  const [journalEntry, setJournalEntry] = useState(data.journal || "");
-
   const completed = Object.values(data.habits).filter(Boolean).length;
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(new Date());
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, []);
-
-  async function saveJournal() {
-    setData((d) => ({
-      ...d,
-      journal: journalEntry,
-    }));
-
-    try {
-      await api("/api/journal", {
-        method: "POST",
-        body: JSON.stringify({
-          entry_date: todayISO(),
-          content: journalEntry,
-        }),
-      });
-
-      notify("Journal saved 📝");
-    } catch {
-      notify("Journal saved locally");
-    }
-  }
 
   async function saveMood(mood) {
     setData((d) => ({ ...d, mood }));
-
     try {
       await api("/mood", {
         method: "POST",
@@ -145,10 +106,28 @@ function Today({ data, setData, notify }) {
           mood,
         }),
       });
-
       notify("Mood saved ✨");
     } catch {
-      notify("Mood saved locally");
+      notify("Saved locally — API needs its exact field format");
+    }
+  }
+
+  async function saveWellness(name, value) {
+    const next = { ...data.wellness, [name]: value };
+    setData((d) => ({ ...d, wellness: next }));
+
+    try {
+      await api("/wellness", {
+        method: "POST",
+        body: JSON.stringify({
+          entry_date: todayISO(),
+          category: name,
+          rating: value,
+        }),
+      });
+      notify("Wellness saved");
+    } catch {
+      notify("Saved locally");
     }
   }
 
@@ -163,22 +142,17 @@ function Today({ data, setData, notify }) {
           hours: value,
         }),
       });
-
       notify("Sleep saved 🌙");
     } catch {
-      notify("Sleep saved locally");
+      notify("Saved locally");
     }
   }
 
   async function toggleHabit(id) {
     const next = !data.habits[id];
-
     setData((d) => ({
       ...d,
-      habits: {
-        ...d.habits,
-        [id]: next,
-      },
+      habits: { ...d.habits, [id]: next },
     }));
 
     try {
@@ -195,76 +169,61 @@ function Today({ data, setData, notify }) {
     }
   }
 
-  const dateText = now.toLocaleDateString("en-IN", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
+  async function submitToday() {
+    const completed = habits
+      .filter(([id]) => data.habits?.[id])
+      .map(([, , name]) => `✓ ${name}`)
+      .join("\n");
 
-  const timeText = now.toLocaleTimeString("en-IN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  });
+    const wellness = Object.entries(data.wellness || {})
+      .map(([name, rating]) => `${name}: ${rating}/5`)
+      .join("\n");
+
+    const summary = `📅 TODAY — ${todayISO()}
+
+🙂 Mood: ${data.mood || "Not recorded"}
+😴 Sleep: ${data.sleep || "Not recorded"} hours
+
+🏋️ HABITS
+${completed || "None completed"}
+
+🧠 WELLNESS
+${wellness || "Not recorded"}`;
+
+    try {
+      await api("/api/journal", {
+        method: "POST",
+        body: JSON.stringify({
+          entry_date: todayISO(),
+          content: summary
+        })
+      });
+      notify("🔥 Today's check-in sent to Telegram!");
+    } catch (e) {
+      notify("Failed to send today's check-in");
+    }
+  }
 
   return (
     <main>
-      {/* DATE + LIVE TIME */}
       <header className="hero">
         <div>
-          <div className="eyebrow">TODAY</div>
-
-          <h1>Good day 👋</h1>
-
           <div className="date-label">
-            {dateText}
+            {new Date().toLocaleDateString("en-IN", {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+            })}
           </div>
-
-          <div
-            style={{
-              marginTop: "8px",
-              fontSize: "15px",
-              fontWeight: "600",
-              opacity: 0.7,
-              letterSpacing: "0.5px",
-            }}
-          >
-            {timeText}
-          </div>
+          <h1>Good evening 👋</h1>
+          <p>Let's check in with yourself.</p>
         </div>
 
         <div className="avatar">S</div>
       </header>
 
-      {/* JOURNAL */}
-      <Card className="journal-card">
-        <SectionTitle
-          eyebrow="JOURNAL"
-          title="What's on your mind?"
-        />
-
-        <textarea
-          value={journalEntry}
-          onChange={(e) => setJournalEntry(e.target.value)}
-          placeholder="Write whatever is on your mind today..."
-        />
-
-        <button
-          className="primary-button"
-          onClick={saveJournal}
-        >
-          Save Journal Entry
-        </button>
-      </Card>
-
-      {/* MOOD */}
       <Card className="mood-card">
-        <SectionTitle
-          eyebrow="MOOD"
-          title="How are you feeling?"
-        />
+        <SectionTitle eyebrow="DAILY CHECK-IN" title="How are you feeling?" />
 
         <div className="mood-row">
           {moods.map(([emoji, label]) => (
@@ -282,69 +241,220 @@ function Today({ data, setData, notify }) {
         </div>
       </Card>
 
-      {/* SLEEP */}
-      <Card>
-        <div className="mini-heading">
-          <span>😴</span>
-
-          <div>
-            <div className="eyebrow">SLEEP</div>
-            <strong>{data.sleep.toFixed(1)}h</strong>
+      <div className="grid-two">
+        <Card>
+          <div className="mini-heading">
+            <span>😴</span>
+            <div>
+              <div className="eyebrow">SLEEP</div>
+              <strong>{data.sleep.toFixed(1)}h</strong>
+            </div>
           </div>
-        </div>
 
-        <input
-          className="range"
-          type="range"
-          min="0"
-          max="12"
-          step="0.5"
-          value={data.sleep}
-          onChange={(e) =>
-            saveSleep(Number(e.target.value))
-          }
-        />
+          <input
+            className="range"
+            type="range"
+            min="0"
+            max="12"
+            step="0.5"
+            value={data.sleep}
+            onChange={(e) => saveSleep(Number(e.target.value))}
+          />
 
-        <div className="range-labels">
-          <span>0h</span>
-          <span>6h</span>
-          <span>12h</span>
-        </div>
-      </Card>
+          <div className="range-labels">
+            <span>0h</span>
+            <span>6h</span>
+            <span>12h</span>
+          </div>
+        </Card>
 
-      {/* HABITS */}
+        <Card>
+          <div className="habit-summary">
+            <ProgressRing value={completed} total={habits.length} />
+            <div>
+              <div className="eyebrow">HABITS</div>
+              <strong>{completed} completed</strong>
+              <p>Keep the streak alive.</p>
+            </div>
+          </div>
+        </Card>
+      </div>
+
       <Card>
-        <SectionTitle
-          eyebrow="HABITS"
-          title={`${completed} of ${habits.length} completed`}
-        />
+        <SectionTitle eyebrow="TODAY" title="Your habits" />
 
         <div className="habit-grid">
           {habits.map(([id, emoji, name]) => (
             <button
               key={id}
-              className={`habit-pill ${
-                data.habits[id] ? "done" : ""
-              }`}
+              className={`habit-pill ${data.habits[id] ? "done" : ""}`}
               onClick={() => toggleHabit(id)}
             >
               <span>{emoji}</span>
               <span>{name}</span>
-              <b>
-                {data.habits[id] ? "✓" : "+"}
-              </b>
+              <b>{data.habits[id] ? "✓" : "+"}</b>
             </button>
           ))}
         </div>
       </Card>
-    </main>
+
+      <Card>
+        <SectionTitle eyebrow="WELLNESS" title="Rate your day" />
+
+        <div className="wellness-list">
+          {wellness.map(([emoji, name]) => (
+            <div className="wellness-item" key={name}>
+              <div className="wellness-name">
+                <span>{emoji}</span>
+                {name}
+              </div>
+
+              <div className="rating-row">
+                {[1, 2, 3, 4, 5].map((rating) => (
+                  <button
+                    key={rating}
+                    className={
+                      data.wellness[name] >= rating ? "rating active" : "rating"
+                    }
+                    onClick={() => saveWellness(name, rating)}
+                  >
+                    {rating}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card className="priority-card">
+        <div className="priority-icon">🎯</div>
+        <div>
+          <div className="eyebrow">THIS WEEK</div>
+          <h3>{data.priority || "Set your top priority"}</h3>
+          <p>Small progress every day adds up.</p>
+        </div>
+      </Card>
+
+      <Card className="ai-card">
+        <div className="ai-icon">✦</div>
+        <div>
+          <div className="eyebrow">AI INSIGHT</div>
+          <h3>{data.insight}</h3>
+          <p>Your personal data is being turned into useful patterns.</p>
+        </div>
+      </Card>
+    
+        <button className="primary-button" onClick={submitToday}>
+          📲 Submit Today's Check-in
+        </button>
+
+</main>
   );
 }
 
 function Month({ data, setData, notify }) {
   const [shoppingInput, setShoppingInput] = useState("");
+  const [expenseName, setExpenseName] = useState("");
+  const [expenseAmount, setExpenseAmount] = useState("");
+  const [editingFocus, setEditingFocus] = useState(false);
+  const [focusDraft, setFocusDraft] = useState(data.focus || "");
+  const [editingDistraction, setEditingDistraction] = useState(false);
+  const [distractionDraft, setDistractionDraft] = useState(
+    data.distraction || "Doomscrolling & procrastination"
+  );
+  const [affirmationInput, setAffirmationInput] = useState("");
+  const [affirmationIndex, setAffirmationIndex] = useState(0);
 
-  async function addShopping() {
+  const affirmations =
+    Array.isArray(data.affirmations) && data.affirmations.length
+      ? data.affirmations
+      : [data.affirmation || "I am becoming more disciplined every single day."];
+
+  const expenses = Array.isArray(data.budget?.expenses)
+    ? data.budget.expenses
+    : [];
+
+  const income = Number(data.budget?.income || 0);
+  const spent = expenses.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  const saved = income - spent;
+  const savingsPercent =
+    income > 0 ? Math.max(0, Math.min(100, (saved / income) * 100)) : 0;
+
+  function updateBudget(patch) {
+    setData((d) => ({
+      ...d,
+      budget: {
+        ...(d.budget || {}),
+        ...patch,
+      },
+    }));
+  }
+
+  function saveFocus() {
+    setData((d) => ({ ...d, focus: focusDraft.trim() }));
+    setEditingFocus(false);
+    notify("Focus updated 🎯");
+  }
+
+  function saveDistraction() {
+    setData((d) => ({ ...d, distraction: distractionDraft.trim() }));
+    setEditingDistraction(false);
+    notify("Distractions updated");
+  }
+
+  function addAffirmation() {
+    const value = affirmationInput.trim();
+    if (!value) return;
+
+    setData((d) => ({
+      ...d,
+      affirmations: [
+        ...(d.affirmations || [d.affirmation].filter(Boolean)),
+        value,
+      ],
+    }));
+    setAffirmationInput("");
+    notify("Affirmation added ✨");
+  }
+
+  function deleteAffirmation(index) {
+    if (affirmations.length <= 1) return;
+
+    const next = affirmations.filter((_, i) => i !== index);
+    setData((d) => ({ ...d, affirmations: next, affirmation: next[0] }));
+    setAffirmationIndex((i) => Math.min(i, next.length - 1));
+    notify("Affirmation deleted");
+  }
+
+  function addExpense() {
+    const name = expenseName.trim();
+    const amount = Number(expenseAmount);
+
+    if (!name || !amount || amount <= 0) return;
+
+    updateBudget({
+      expenses: [
+        ...expenses,
+        {
+          id: Date.now(),
+          name,
+          amount,
+        },
+      ],
+    });
+
+    setExpenseName("");
+    setExpenseAmount("");
+    notify("Expense added 💸");
+  }
+
+  function deleteExpense(id) {
+    updateBudget({ expenses: expenses.filter((item) => item.id !== id) });
+    notify("Expense deleted");
+  }
+
+  function addShopping() {
     if (!shoppingInput.trim()) return;
 
     const item = {
@@ -355,24 +465,40 @@ function Month({ data, setData, notify }) {
 
     setData((d) => ({
       ...d,
-      shopping: [...d.shopping, item],
+      shopping: [...(d.shopping || []), item],
     }));
 
     setShoppingInput("");
 
-    try {
-      await api("/shopping-item", {
-        method: "POST",
-        body: JSON.stringify({
-          month_start: monthISO(),
-          item: item.text,
-        }),
-      });
-      notify("Shopping item added");
-    } catch {
-      notify("Added locally");
-    }
+    api("/shopping-item", {
+      method: "POST",
+      body: JSON.stringify({
+        month_start: monthISO(),
+        item: item.text,
+      }),
+    })
+      .then(() => notify("Shopping item added"))
+      .catch(() => notify("Added locally"));
   }
+
+  function toggleShopping(id) {
+    setData((d) => ({
+      ...d,
+      shopping: (d.shopping || []).map((x) =>
+        x.id === id ? { ...x, done: !x.done } : x
+      ),
+    }));
+  }
+
+  function deleteShopping(id) {
+    setData((d) => ({
+      ...d,
+      shopping: (d.shopping || []).filter((x) => x.id !== id),
+    }));
+    notify("Shopping item deleted");
+  }
+
+  const currentAffirmation = affirmations[affirmationIndex] || affirmations[0];
 
   return (
     <main>
@@ -392,14 +518,55 @@ function Month({ data, setData, notify }) {
         <Card className="focus-card">
           <span className="big-icon">🎯</span>
           <div className="eyebrow">FOCUS ON</div>
-          <h3>{data.focus || "Build. Learn. Grow."}</h3>
+
+          {editingFocus ? (
+            <div className="add-row">
+              <input
+                value={focusDraft}
+                onChange={(e) => setFocusDraft(e.target.value)}
+                autoFocus
+              />
+              <button onClick={saveFocus}>✓</button>
+            </div>
+          ) : (
+            <>
+              <h3>{data.focus || "Build. Learn. Grow."}</h3>
+              <button className="link" onClick={() => setEditingFocus(true)}>
+                Edit
+              </button>
+            </>
+          )}
+
           <p>Keep your attention on what actually matters.</p>
         </Card>
 
         <Card className="focus-card distraction">
           <span className="big-icon">🚫</span>
           <div className="eyebrow">DISTRACTIONS</div>
-          <h3>Doomscrolling & procrastination</h3>
+
+          {editingDistraction ? (
+            <div className="add-row">
+              <input
+                value={distractionDraft}
+                onChange={(e) => setDistractionDraft(e.target.value)}
+                autoFocus
+              />
+              <button onClick={saveDistraction}>✓</button>
+            </div>
+          ) : (
+            <>
+              <h3>
+                {data.distraction || "Doomscrolling & procrastination"}
+              </h3>
+              <button
+                className="link"
+                onClick={() => setEditingDistraction(true)}
+              >
+                Edit
+              </button>
+            </>
+          )}
+
           <p>Protect your time and energy.</p>
         </Card>
       </div>
@@ -407,47 +574,147 @@ function Month({ data, setData, notify }) {
       <Card className="affirmation">
         <div className="big-icon">✨</div>
         <div className="eyebrow">MONTHLY AFFIRMATION</div>
-        <h2>
-          {data.affirmation ||
-            "I am becoming more disciplined every single day."}
-        </h2>
+
+        <h2>{currentAffirmation}</h2>
+
+        <div className="add-row">
+          <input
+            value={affirmationInput}
+            onChange={(e) => setAffirmationInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addAffirmation()}
+            placeholder="Add an affirmation..."
+          />
+          <button onClick={addAffirmation}>+</button>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginTop: 12,
+            gap: 8,
+          }}
+        >
+          <button
+            className="link"
+            onClick={() =>
+              setAffirmationIndex(
+                (affirmationIndex - 1 + affirmations.length) %
+                  affirmations.length
+              )
+            }
+          >
+            ←
+          </button>
+
+          <small>
+            {affirmationIndex + 1} / {affirmations.length}
+          </small>
+
+          <button
+            className="link"
+            onClick={() =>
+              setAffirmationIndex((affirmationIndex + 1) % affirmations.length)
+            }
+          >
+            →
+          </button>
+
+          <button
+            className="link"
+            onClick={() => deleteAffirmation(affirmationIndex)}
+            disabled={affirmations.length <= 1}
+          >
+            Delete
+          </button>
+        </div>
       </Card>
 
       <Card>
         <SectionTitle
           eyebrow="MONEY"
-          title="August budget"
-          action={<span className="link">View analysis →</span>}
+          title={`${new Date().toLocaleDateString("en-IN", {
+            month: "long",
+          })} budget`}
         />
 
         <div className="money-grid">
           <div>
             <small>Income</small>
-            <strong>₹{data.budget.income.toLocaleString("en-IN")}</strong>
+            <input
+              type="number"
+              min="0"
+              value={income}
+              onChange={(e) =>
+                updateBudget({ income: Number(e.target.value) || 0 })
+              }
+            />
           </div>
+
           <div>
             <small>Spent</small>
-            <strong>₹{data.budget.spent.toLocaleString("en-IN")}</strong>
+            <strong>₹{spent.toLocaleString("en-IN")}</strong>
           </div>
+
           <div>
             <small>Saved</small>
-            <strong>₹{data.budget.saved.toLocaleString("en-IN")}</strong>
+            <strong>₹{saved.toLocaleString("en-IN")}</strong>
           </div>
         </div>
 
         <div className="budget-bar">
-          <span
-            style={{
-              width: `${
-                data.budget.income
-                  ? Math.min(
-                      100,
-                      (data.budget.saved / data.budget.income) * 100
-                    )
-                  : 0
-              }%`,
-            }}
+          <span style={{ width: `${savingsPercent}%` }} />
+        </div>
+      </Card>
+
+      <Card>
+        <SectionTitle eyebrow="BUDGET" title="Expenses" />
+
+        <div className="add-row">
+          <input
+            value={expenseName}
+            onChange={(e) => setExpenseName(e.target.value)}
+            placeholder="What did you spend on?"
           />
+          <input
+            type="number"
+            min="0"
+            value={expenseAmount}
+            onChange={(e) => setExpenseAmount(e.target.value)}
+            placeholder="₹ amount"
+          />
+          <button onClick={addExpense}>+</button>
+        </div>
+
+        <div className="shopping-list">
+          {expenses.length === 0 ? (
+            <p>No expenses added yet.</p>
+          ) : (
+            expenses.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "10px 0",
+                  borderBottom: "1px solid rgba(120, 100, 150, 0.12)",
+                }}
+              >
+                <span>{item.name}</span>
+                <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <strong>₹{Number(item.amount).toLocaleString("en-IN")}</strong>
+                  <button
+                    className="link"
+                    onClick={() => deleteExpense(item.id)}
+                  >
+                    Delete
+                  </button>
+                </span>
+              </div>
+            ))
+          )}
         </div>
       </Card>
 
@@ -465,22 +732,32 @@ function Month({ data, setData, notify }) {
         </div>
 
         <div className="shopping-list">
-          {data.shopping.map((item) => (
-            <button
+          {(data.shopping || []).map((item) => (
+            <div
               key={item.id}
-              className={`shopping-item ${item.done ? "done" : ""}`}
-              onClick={() =>
-                setData((d) => ({
-                  ...d,
-                  shopping: d.shopping.map((x) =>
-                    x.id === item.id ? { ...x, done: !x.done } : x
-                  ),
-                }))
-              }
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                borderBottom: "1px solid rgba(120, 100, 150, 0.12)",
+              }}
             >
-              <span>{item.done ? "✓" : "○"}</span>
-              {item.text}
-            </button>
+              <button
+                className={`shopping-item ${item.done ? "done" : ""}`}
+                onClick={() => toggleShopping(item.id)}
+                style={{ flex: 1 }}
+              >
+                <span>{item.done ? "✓" : "○"}</span>
+                {item.text}
+              </button>
+
+              <button
+                className="link"
+                onClick={() => deleteShopping(item.id)}
+              >
+                Delete
+              </button>
+            </div>
           ))}
         </div>
       </Card>
@@ -733,6 +1010,12 @@ export default function App() {
         insight:
           "You've been showing up consistently. Keep building momentum.",
         focus: "Coding, health, agency & opportunities",
+        distraction: "Doomscrolling & procrastination",
+        affirmations: [
+          "I am becoming more disciplined every single day.",
+          "Small progress every day creates a better life.",
+          "I keep promises I make to myself.",
+        ],
         affirmation:
           "I am becoming more disciplined every single day.",
         shopping: [
@@ -742,8 +1025,7 @@ export default function App() {
         ],
         budget: {
           income: 25000,
-          spent: 8400,
-          saved: 16600,
+          expenses: [],
         },
         journal: "",
       }
